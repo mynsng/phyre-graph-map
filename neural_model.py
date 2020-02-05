@@ -145,7 +145,7 @@ class NeuralModel():
 
             optimizer.zero_grad()
             embedding = model(batch_observations, batch_actions, gray_list)
-            qa_loss= model.compute_loss(embedding, edge, batch_answer, batch_is_solved)
+            qa_loss, ce_loss= model.compute_loss(embedding, edge, batch_answer, batch_is_solved)
 
             if (batch_id+1) > params['report_statistic']:
                 max_loss.append(qa_loss.max().item())
@@ -159,7 +159,7 @@ class NeuralModel():
                 max_loss_action.append(batch_actions[max_index])
                 min_loss_action.append(batch_actions[min_index])
 
-            loss = qa_loss# + ce_loss
+            loss = qa_loss + ce_loss
             loss = torch.mean(loss)
 
             loss.backward()

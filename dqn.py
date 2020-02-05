@@ -22,7 +22,7 @@ default_params = {
     'max_predict_actions' : 1,
     'embed_size'          : 128,
     'hidden_size'         : 128,
-    'report_statistic'    : 149000,
+    'report_statistic'    : 149900,
     'test_size'           : 10000,
     
     'rank_size'            : 10000,
