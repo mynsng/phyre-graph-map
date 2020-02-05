@@ -26,10 +26,14 @@ class ResNet18FilmAction(nn.Module):
         # output_size is designated as a number of channel in resnet
         output_size = 256
         net = torchvision.models.resnet18(pretrained=False)
+        net2 = torchvision.models.resnet18(pretrained=False)
         conv1 = nn.Conv2d(1,64, kernel_size=7, stride=2, padding=3, bias=False)
+        conv2 = nn.Conv2d(1,64, kernel_size=7, stride=2, padding=3, bias=False)
         self.register_buffer('embed_weights', torch.eye(phyre.NUM_COLORS))
         self.stem = nn.Sequential(conv1, net.bn1, net.relu, net.maxpool)
         self.stages = nn.ModuleList([net.layer1, net.layer2, net.graphlayer1, net.graphlayer2])
+        self.stem2 = nn.Sequential(conv2, net2.bn1, net2.relu, net2.maxpool)
+        self.stages2 = nn.ModuleList([net2.layer1, net2.layer2, net2.graphlayer1, net2.graphlayer2])
 
         self.qna_networks = LightGraphQA(embed_size, hidden_size) #both 256
 
@@ -62,8 +66,8 @@ class ResNet18FilmAction(nn.Module):
                 img = np.where(img==5, 1, img)
                 gray[i][j] = torch.from_numpy(img).float().to(device)
         
-        entities = [green, blue, gray[:, 0, :, :].unsqueeze(1), gray[:, 1, :, :].unsqueeze(1), gray[:, 2, :, :].unsqueeze(1), black]
-        entity = torch.zeros((batch_size, 6, 1, 256, 256)).cuda()
+        entities = [green, blue, gray[:, 0, :, :].unsqueeze(1), gray[:, 1, :, :].unsqueeze(1), gray[:, 2, :, :].unsqueeze(1)]
+        entity = torch.zeros((batch_size, 5, 1, 256, 256)).cuda()
         node_features = torch.zeros((batch_size, 6, 128)).cuda()
         t = 0
         for obj in entities:
@@ -77,8 +81,15 @@ class ResNet18FilmAction(nn.Module):
         features = features.flatten(1)
         features = features.view(batch_size, -1, 128)
         node_features[:, 1:6, :] = features[:, :5, :]
-        black_feature = features[:, 5, :]
-        data = dict(node = node_features, black = black_feature)
+        
+        black = self.stem2(black)
+        for stage in self.stages2:
+            black = stage(black)
+        black = nn.functional.adaptive_max_pool2d(black, 1)
+        black = black.flatten(1)
+        black = black.view(batch_size, -1, 128)
+        
+        data = dict(node = node_features, black = black)
         
         return data
 
@@ -455,7 +466,7 @@ class InteractionNetwork(nn.Module):
         obj_vecs = entities['node']
         black = entities['black']
         batch_size = black.shape[0]
-        black_tensor = black.repeat(1,6).view(batch_size, -1, 128)
+        black_tensor = torch.cat([black, black, black, black, black, black], 1)
         dtype, device = obj_vecs.dtype, obj_vecs.device
         #pdb.set_trace()
         obj_vecs = obj_vecs.transpose(1,2)
