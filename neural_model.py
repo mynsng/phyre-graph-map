@@ -145,7 +145,7 @@ class NeuralModel():
 
             optimizer.zero_grad()
             embedding = model(batch_observations, batch_actions, gray_list)
-            qa_loss, ce_loss= model.compute_loss(embedding, edge, batch_answer, batch_is_solved)
+            qa_loss = model.compute_loss(embedding, edge, batch_answer, batch_is_solved)
 
             if (batch_id+1) > params['report_statistic']:
                 max_loss.append(qa_loss.max().item())
@@ -159,7 +159,7 @@ class NeuralModel():
                 max_loss_action.append(batch_actions[max_index])
                 min_loss_action.append(batch_actions[min_index])
 
-            loss = qa_loss + ce_loss
+            loss = qa_loss
             loss = torch.mean(loss)
 
             loss.backward()
@@ -232,7 +232,7 @@ class NeuralModel():
         predict_location = model.predict_location(model(observation, action, gray_list), edge)
         predict_location = predict_location.squeeze(0).detach().cpu().numpy()
         predict_location[:, :, :4] = np.where(predict_location[:, :, :4]<0 , 0, predict_location[:, :, :4])
-        predict_location[:, :, :4] = np.where(predict_location[:, :, :4]>1 , 0.99, predict_location[:, :, :4])
+        predict_location[:, :, :4] = np.where(predict_location[:, :, :4]>1 , 0.99999, predict_location[:, :, :4])
         for i in range(16):
             for j in range(6):
                 if j == 0:

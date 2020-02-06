@@ -117,22 +117,21 @@ class ResNet18FilmAction(nn.Module):
 
     def predict_location(self, embedding, edges):
 
-        outputs_location, outputs_class, _ = self.qna_networks(embedding, edges)
-        outputs = torch.cat([outputs_location, outputs_class], 3)
+        outputs, _ = self.qna_networks(embedding, edges)
+        
         return outputs
 
     def compute_loss(self, embedding, edges, label_batch, targets):
 
         label_batch = torch.from_numpy(label_batch).float().to(embedding['node'].device)
-        batch_size = label_batch.size(0)
-        predict_location, predict_class, last_hidden = self.qna_networks(embedding, edges)
+        predict_location, last_hidden = self.qna_networks(embedding, edges)
 
         targets = targets.to(dtype=torch.float, device=embedding['node'].device)
-        qa_loss = self.qna_networks.MSE_loss(label_batch[:,:,:,:4], predict_location)
-        qa_loss = qa_loss.view(batch_size, -1, 4)
+        qa_loss = self.qna_networks.MSE_loss(label_batch, predict_location)
         qa_loss = torch.mean(qa_loss, 1)
         qa_loss = torch.mean(qa_loss, 1)
-        ce_loss = self.qna_networks.CE_loss(label_batch[:, :, :, 4:], predict_location)
+        qa_loss = torch.mean(qa_loss, 1)
+        #ce_loss = self.qna_networks.CE_loss(label_batch[:, :, :, 4:], predict_location)
         
         #last_hidden = nn.functional.adaptive_max_pool2d(last_hidden, 1)
         #last_hidden = last_hidden.flatten(1)
@@ -141,18 +140,16 @@ class ResNet18FilmAction(nn.Module):
         #pdb.set_trace()
         #qa_loss + ce_loss
 
-        return qa_loss, ce_loss
+        return qa_loss
     
     def compute_16_loss(self, embedding, edges, label_batch, targets):
 
         label_batch = torch.from_numpy(label_batch).float().to(embedding['node'].device)
-        batch_size = label_batch.size(0)
-        predict_location, _, last_hidden = self.qna_networks(embedding, edges)
+        predict_location, last_hidden = self.qna_networks(embedding, edges)
 
         targets = targets.to(dtype=torch.float, device=embedding['node'].device)
-        qa_loss = self.qna_networks.MSE_loss(label_batch[:, :, :, :4], predict_location)
-        qa_loss = qa_loss.view(batch_size, 16, 6, 4)
-        qa_loss = qa_loss[:, -1, :2, :2]
+        qa_loss = self.qna_networks.MSE_loss(label_batch, predict_location)
+        qa_loss = qa_loss[:, -1, :2, :]
         qa_loss = torch.mean(qa_loss, 1)
         qa_loss = torch.mean(qa_loss, 1)
         #last_hidden = nn.functional.adaptive_max_pool2d(last_hidden, 1)
@@ -420,8 +417,7 @@ class LightGraphQA(nn.Module):
         self.register_buffer('embed_weights', torch.eye(phyre.NUM_COLORS)) #이거 왜있는거죠?
 
         self.graph_net = InteractionNetwork(128,128)
-        self.location = nn.Linear(128, 4)
-        self.entity_class = nn.Linear(128, 4)
+        self.location = nn.Linear(128, 8)
         #self.loss_fn = nn.MSELoss()
 
     @property
@@ -436,8 +432,7 @@ class LightGraphQA(nn.Module):
 
         batch_size = entity['node'].size(0)
         #edges = edges.to(entity.device)
-        location_outputs = torch.empty((batch_size, 16, 6, 4)).cuda()
-        class_outputs = torch.empty((batch_size, 16, 6, 4)).cuda()
+        outputs = torch.empty((batch_size, 16, 6, 8)).cuda()
         # If multiple actions are provided with a given image, shape should be adjusted
         #if features.shape[0] == 1 and actions.shape[0] != 1:
         #    features = features.expand(actions.shape[0], -1)
@@ -446,37 +441,19 @@ class LightGraphQA(nn.Module):
 
             entity = self.graph_net(entity, edges)
             for i in range(6):
-                location_outputs[:, t, i, :] = self.location(entity['node'][:, i, :])
-                class_outputs[:, t, i, :] = self.entity_class(entity['node'][:, i, :])
+                outputs[:, t, i, :] = self.location(entity['node'][:, i, :])
+                outputs[:, t, i, 4:] = torch.sigmoid(outputs[:, t, i, 4:])
             if t == 15:
                 last_location = entity['node']
 
-        return location_outputs, class_outputs, last_location
+        return outputs, last_location
 
     def MSE_loss(self, labels, targets):
         
-        labels = labels.view(-1, 4)
-        targets = targets.view(-1, 4)
         loss = nn.functional.mse_loss(labels, targets, reduce = False)
 
         return loss
     
-    def CE_loss(self, labels, targets):
-        
-        
-        labels = labels.view(-1, 4)
-        targets = targets.view(-1, 4)
-        size = labels.size(0)
-        loss = []
-        for i in range(size):
-            if labels[i].mean() == 0:
-                loss.append(0)
-            else:
-                a = labels[i].argmax()
-                ce_loss = nn.functional.cross_entropy(targets[i].view(1, -1), a.view(1))
-                loss.append(ce_loss)
-        
-        return sum(loss) / len(loss)
 
 class InteractionNetwork(nn.Module):
     
